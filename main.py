@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Union
 from pydantic import BaseModel
 from langgraph.graph import StateGraph, END, START
 import os
@@ -14,10 +14,12 @@ from rich.syntax import Syntax
 from rich.prompt import Prompt
 import csv
 import json
+from pydantic_ai import Agent
 
 # Load environment variables from .env
 load_dotenv()
 MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-3.5-turbo")
+OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
 console = Console()
 
@@ -41,6 +43,26 @@ class RegexState(BaseModel):
     false_positives: Optional[List[str]] = None  # Negatives that matched
     false_negatives: Optional[List[str]] = None  # Positives that did not match
 
+class RegexPattern(BaseModel):
+    pattern: str
+
+class RegexExamples(BaseModel):
+    positive: List[str]
+    negative: List[str]
+
+class RegexRefinement(BaseModel):
+    pattern: str
+    explanation: str = ""
+
+class PatternTask(BaseModel):
+    type: str
+    description: str
+    catalog: Optional[dict] = None
+
+class ClarifyDecomposeOutput(BaseModel):
+    pattern_tasks: Optional[List[PatternTask]] = None
+    clarification: Optional[str] = None
+
 class RegexAgent:
     def __init__(self):
         self.console = console
@@ -48,67 +70,52 @@ class RegexAgent:
 
     @staticmethod
     def call_openai(prompt: str, system: Optional[str] = None, model: Optional[str] = None) -> str:
-        client = OpenAI()
-        messages = []
-        if system:
-            messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
-        response = client.chat.completions.create(
-            model=model or MODEL_NAME,
-            messages=messages,
-            temperature=0.0,
-            max_tokens=256,
-        )
-        content = response.choices[0].message.content
-        return content.strip() if content else ""
+        # Deprecated: replaced by pydantic-ai completions
+        raise NotImplementedError("Use pydantic-ai Completion instead.")
 
     def clarify_and_decompose_agent(self, state: RegexState) -> RegexState:
         self.console.print("[bold cyan][Agent][/bold cyan] Clarifying and decomposing user request...")
         prompt = (
             "You are a regex pattern decomposition assistant.\n"
-            "Given a user request, output a JSON list of pattern types and descriptions, or a clarification question if the request is ambiguous.\n"
+            "Given a user request, output a JSON object with either a 'pattern_tasks' key (a list of pattern types and descriptions), or a 'clarification' key (a string question if the request is ambiguous).\n"
             "Examples:\n"
             "Request: 'Extract emails and phone numbers'\n"
-            "Output: [{\"type\": \"email\", \"description\": \"Match email addresses\"}, {\"type\": \"phone\", \"description\": \"Match phone numbers\"}]\n"
+            "Output: {\"pattern_tasks\": [{\"type\": \"email\", \"description\": \"Match email addresses\"}, {\"type\": \"phone\", \"description\": \"Match phone numbers\"}]}\n"
             "Request: 'Generate an e-mail pattern'\n"
-            "Output: [{\"type\": \"email\", \"description\": \"Match email addresses\"}]\n"
+            "Output: {\"pattern_tasks\": [{\"type\": \"email\", \"description\": \"Match email addresses\"}]}\n"
             "Request: 'Find all numbers'\n"
-            "Output: [{\"type\": \"number\", \"description\": \"Match numbers (digits)\"}]\n"
+            "Output: {\"pattern_tasks\": [{\"type\": \"number\", \"description\": \"Match numbers (digits)\"}]}\n"
             "Request: 'Extract all patterns'\n"
-            "Output: Clarification question: 'What kind of patterns do you want to extract? (e.g., emails, phone numbers, dates, etc.)'\n"
+            "Output: {\"clarification\": 'What kind of patterns do you want to extract? (e.g., emails, phone numbers, dates, etc.)'}\n"
             "Request: 'Extract IPv4 addresses'\n"
-            "Output: [{\"type\": \"ipv4\", \"description\": \"Match IPv4 addresses\"}]\n"
+            "Output: {\"pattern_tasks\": [{\"type\": \"ipv4\", \"description\": \"Match IPv4 addresses\"}]}\n"
             "Request: 'Find all hexadecimal numbers'\n"
-            "Output: [{\"type\": \"hex\", \"description\": \"Match hexadecimal numbers\"}]\n"
+            "Output: {\"pattern_tasks\": [{\"type\": \"hex\", \"description\": \"Match hexadecimal numbers\"}]}\n"
             "Request: 'Extract UUIDs'\n"
-            "Output: [{\"type\": \"uuid\", \"description\": \"Match UUIDs\"}]\n"
+            "Output: {\"pattern_tasks\": [{\"type\": \"uuid\", \"description\": \"Match UUIDs\"}]}\n"
             "Request: 'Find all URLs'\n"
-            "Output: [{\"type\": \"url\", \"description\": \"Match URLs\"}]\n"
+            "Output: {\"pattern_tasks\": [{\"type\": \"url\", \"description\": \"Match URLs\"}]}\n"
             "---\n"
             f"USER REQUEST: {state.description}\n"
             "OUTPUT:"
-            "\nOutput only the JSON list or clarification question for the USER REQUEST."
+            "\nOutput only the JSON object for the USER REQUEST."
         )
-        import json
-        try:
-            response = self.call_openai(prompt, model=MODEL_NAME)
-            if response.strip().startswith('['):
-                start = response.find('[')
-                end = response.rfind(']') + 1
-                tasks = json.loads(response[start:end])
-                # Supplement/override with catalog if type is known
-                for t in tasks:
-                    ttype = t.get('type', '').lower()
-                    if ttype in self.PATTERN_CATALOG:
-                        t['catalog'] = self.PATTERN_CATALOG[ttype]
-                state.pattern_tasks = tasks
-                state.clarification_needed = False
-                state.clarification_prompt = None
-            else:
-                state.clarification_needed = True
-                state.clarification_prompt = response.strip()
-        except Exception as e:
-            self.console.print(f"[red][LLM ERROR][/red] {e}")
+        agent = Agent(MODEL_NAME, output_type=ClarifyDecomposeOutput)
+        result = agent.run_sync(prompt)
+        output = result.output
+        if output.pattern_tasks:
+            # Supplement/override with catalog if type is known
+            for t in output.pattern_tasks:
+                ttype = t.type.lower()
+                if ttype in self.PATTERN_CATALOG:
+                    t.catalog = self.PATTERN_CATALOG[ttype]
+            state.pattern_tasks = [t.model_dump() for t in output.pattern_tasks]
+            state.clarification_needed = False
+            state.clarification_prompt = None
+        elif output.clarification:
+            state.clarification_needed = True
+            state.clarification_prompt = output.clarification
+        else:
             state.pattern_tasks = [{"type": "unknown", "description": state.description}]
             state.clarification_needed = False
             state.clarification_prompt = None
@@ -149,17 +156,13 @@ class RegexAgent:
     @staticmethod
     def generate_regex_agent(state: RegexState) -> RegexState:
         console.print("[bold cyan][Agent][/bold cyan] Generating regex pattern from description...")
-        prompt = f"Write a Python regular expression pattern (do not include slashes or quotes) that matches the following description: {state.description}\nJust output the regex pattern only."
-        try:
-            regex = RegexAgent.call_openai(prompt)
-            if isinstance(regex, str) and regex:
-                regex = regex.strip().splitlines()[0].strip('`"')
-            else:
-                regex = r".*"
-            state.pattern = regex
-        except Exception as e:
-            console.print(f"[red][LLM ERROR][/red] {e}")
-            state.pattern = r".*"
+        prompt = (
+            f"Write a Python regex pattern (no slashes or quotes) for: {state.description}\n"
+            "Output as JSON: {\"pattern\": \"...\"}"
+        )
+        agent = Agent(MODEL_NAME, output_type=RegexPattern)
+        result = agent.run_sync(prompt)
+        state.pattern = result.output.pattern
         return state
 
     @staticmethod
@@ -168,27 +171,12 @@ class RegexAgent:
         prompt = (
             f"Given the regex pattern: {state.pattern}\n"
             f"and the description: {state.description}\n"
-            "Generate 3 positive example strings that should match, and 3 negative example strings that should not match. "
-            "Return them as JSON with keys 'positive' and 'negative'."
+            "Generate 3 positive and 3 negative example strings. Output as JSON: {\"positive\": [...], \"negative\": [...]}"
         )
-        try:
-            import json
-            examples_str = RegexAgent.call_openai(prompt)
-            start = examples_str.find('{')
-            end = examples_str.rfind('}') + 1
-            if start != -1 and end != -1:
-                examples_json = examples_str[start:end]
-                examples = json.loads(examples_json)
-                state.examples_positive = examples.get('positive', [])
-                state.examples_negative = examples.get('negative', [])
-            else:
-                lines = [line.strip() for line in examples_str.splitlines() if line.strip()]
-                state.examples_positive = lines[:3]
-                state.examples_negative = lines[3:6]
-        except Exception as e:
-            console.print(f"[red][LLM ERROR][/red] {e}")
-            state.examples_positive = ["example1", "example2"]
-            state.examples_negative = ["not_a_match", "123"]
+        agent = Agent(MODEL_NAME, output_type=RegexExamples)
+        result = agent.run_sync(prompt)
+        state.examples_positive = result.output.positive
+        state.examples_negative = result.output.negative
         return state
 
     @staticmethod
@@ -251,18 +239,12 @@ class RegexAgent:
             f"Description: {state.description}\n"
             f"Positive examples: {state.examples_positive}\n"
             f"Negative examples: {state.examples_negative}\n"
-            "Suggest a corrected regex pattern (Python syntax, no slashes or quotes). Output only the pattern."
+            "Suggest a corrected regex pattern. Output as JSON: {\"pattern\": \"...\", \"explanation\": \"...\"}"
         )
-        try:
-            regex = RegexAgent.call_openai(prompt)
-            if isinstance(regex, str) and regex:
-                regex = regex.strip().splitlines()[0].strip('`"')
-            else:
-                regex = r". +"
-            state.pattern = regex
-        except Exception as e:
-            console.print(f"[red][LLM ERROR][/red] {e}")
-            state.pattern = r". +"
+        agent = Agent(MODEL_NAME, output_type=RegexRefinement)
+        result = agent.run_sync(prompt)
+        state.pattern = result.output.pattern
+        state.explanation = result.output.explanation
         return state
 
     @staticmethod
@@ -357,17 +339,23 @@ class RegexAgent:
         },
         "number": {
             "pattern": r"\d+",
-            "examples_positive": ["123", "4567", "890"], "examples_negative": ["abc", "12a34", "one23"]
+            "examples_positive": ["123", "4567", "890"], 
+            "examples_negative": ["abc", "12a34", "one23"]
         },
         "ipv4": {
             "pattern": r"(\d{1,3}\.){3}\d{1,3}",
-            "examples_positive": ["192.168.1.1", "8.8.8.8", "127.0.0.1"], "examples_negative": ["999.999.999.999", "abc.def.ghi.jkl", "1234.5.6.7"]
+            "examples_positive": ["192.168.1.1", "8.8.8.8", "127.0.0.1"], 
+            "examples_negative": ["999.999.999.999", "abc.def.ghi.jkl", "1234.5.6.7"]
         },
         "hex": {
-            "pattern": r"0x[0-9a-fA-F]+", "examples_positive": ["0x1A3F", "0xabc123", "0xDEADBEEF"], "examples_negative": ["1234", "xyz", "0x"]
+            "pattern": r"0x[0-9a-fA-F]+", 
+            "examples_positive": ["0x1A3F", "0xabc123", "0xDEADBEEF"], 
+            "examples_negative": ["1234", "xyz", "0x"]
         },
         "uuid": {
-            "pattern": r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", "examples_positive": ["123e4567-e89b-12d3-a456-426614174000"], "examples_negative": ["notauuid", "1234-5678"]
+            "pattern": r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", 
+            "examples_positive": ["123e4567-e89b-12d3-a456-426614174000"], 
+            "examples_negative": ["notauuid", "1234-5678"]
         },
         "url": {
             "pattern": r"https?://[\w.-]+(?:\.[\w\.-]+)+[/#?]?.*",
@@ -423,6 +411,8 @@ class RegexAgent:
         table.add_column("Regex", style="magenta")
         table.add_column("Positive Examples", style="yellow")
         table.add_column("Negative Examples", style="yellow")
+        table.add_column("False Negatives", style="red")
+        table.add_column("False Positives", style="red")
         table.add_column("Valid?", style="bold")
         for i, res in enumerate(self.state.results):
             table.add_row(
@@ -432,6 +422,8 @@ class RegexAgent:
                 Syntax(res['pattern'] or '', "python", theme="ansi_dark").highlight(res['pattern'] or ''),
                 "\n".join(res['examples_positive'] or []),
                 "\n".join(res['examples_negative'] or []),
+                "\n".join(res.get('false_negatives') or []),
+                "\n".join(res.get('false_positives') or []),
                 "[green]✔[/green]" if res['validation_passed'] else "[red]✘[/red]"
             )
         self.console.print(table)
@@ -442,7 +434,7 @@ class RegexAgent:
                 json.dump(self.state.results, f, indent=2)
             with open("results/results.csv", "w", newline="") as f:
                 writer = csv.writer(f)
-                writer.writerow(["#", "Pattern Type", "Description", "Regex", "Positive Examples", "Negative Examples", "Valid?"])
+                writer.writerow(["#", "Pattern Type", "Description", "Regex", "Positive Examples", "Negative Examples", "False Negatives", "False Positives", "Valid?"])
                 for i, res in enumerate(self.state.results):
                     writer.writerow([
                         i+1,
@@ -451,6 +443,8 @@ class RegexAgent:
                         res['pattern'],
                         "; ".join(res['examples_positive'] or []),
                         "; ".join(res['examples_negative'] or []),
+                        "; ".join(res.get('false_negatives') or []),
+                        "; ".join(res.get('false_positives') or []),
                         "✔" if res['validation_passed'] else "✘"
                     ])
             self.console.print("[green]Results exported to results/results.json and results/results.csv[/green]")
