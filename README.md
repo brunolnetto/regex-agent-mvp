@@ -1,73 +1,65 @@
 # Regex Agent MVP
 
-A modular, LLM-powered agent for designing and validating regular expressions with minimal user input. The workflow is orchestrated using [LangGraph](https://github.com/langchain-ai/langgraph) and visualized in ASCII, Mermaid, and PNG formats.
+A modular, LLM-powered tool for designing, validating, and refining regular expressions with minimal user input. Features a built-in pattern catalog, advanced validation (false positives/negatives), and workflow visualization.
 
-## 🚀 Achievements
+## Features
+- **LLM-Powered Regex Design:** Generate regex patterns and examples from natural language.
+- **Self-Validating Workflow:** Auto-generates and validates positive/negative examples, with a feedback/refinement loop.
+- **Pattern Catalog:** Uses and checks known patterns for common types (email, phone, date, etc.).
+- **Advanced Validation:** Reports false positives/negatives and allows user feedback.
+- **Visualization:** Prints workflow as ASCII art, Mermaid, and PNG diagrams.
+- **Organized Output:** Saves results in the `results/` folder (JSON, CSV).
 
-- **LLM-Powered Regex Design:**
-  - Uses OpenAI models to generate regex patterns and examples from natural language descriptions.
-- **Self-Validating Workflow:**
-  - Automatically generates positive/negative examples and validates regexes, refining as needed.
-- **Modular Specialist Agents:**
-  - Each step (generation, example creation, validation, refinement) is a separate agent for easy extension.
-- **LangGraph Orchestration:**
-  - Workflow is defined as a graph, supporting loops and conditional logic.
-- **Visualization:**
-  - Prints the workflow as ASCII art, Mermaid code, and exports a PNG image (using Mermaid.Ink API).
-- **Minimal User Input:**
-  - User only needs to describe the desired regex in plain language.
-- **Configurable LLM Model:**
-  - Model name is set via the `MODEL_NAME` environment variable in `.env`.
+## Workflow Diagrams
 
-## 🛠️ Setup
-
-This project uses [`uv`](https://github.com/astral-sh/uv) for fast, modern Python dependency management and installation.
-
-1. **Install [uv](https://github.com/astral-sh/uv):**
-   ```bash
-   pip install uv
-   # or
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   ```
-2. **Install dependencies:**
-   ```bash
-   uv pip install -r requirements.txt
-   ```
-3. **Set up environment variables**
-   - Create a `.env` file with your OpenAI API key and (optionally) model name:
-     ```env
-     OPENAI_API_KEY=sk-...
-     MODEL_NAME=gpt-3.5-turbo
-     ```
-
-## 🏃 Usage
-
-```bash
-python main.py
+### Clarification/Decomposition Workflow
+```mermaid
+flowchart TD
+    Start([Start]) --> Clarify[Clarify & Decompose]
+    Clarify -->|Needs Clarification| UserClarification[User Clarification]
+    Clarify -->|Ready| UserConfirm[User Confirmation]
+    UserClarification --> Clarify
+    UserConfirm -->|Needs Clarification| UserClarification
+    UserConfirm -->|Confirmed| End([End])
 ```
-- Enter a description of the regex you want (e.g., "Write a pattern to validate e-mail").
-- The agent will:
-  1. Generate a regex pattern using an LLM
-  2. Generate positive/negative examples
-  3. Validate and refine the regex as needed
-  4. Print the final state
-  5. Visualize the workflow in ASCII, Mermaid, and PNG (`workflow.png`)
 
-## 📊 Visualization Example
+### Single-Pattern Workflow
+```mermaid
+flowchart TD
+    Start([Start]) --> GenRegex[Generate Regex]
+    GenRegex --> GenExamples[Generate Examples]
+    GenExamples --> Validate[Validate Regex]
+    Validate -->|Valid| End([End])
+    Validate -->|Invalid & Retries Left| Feedback[Feedback]
+    Feedback --> Refine[Refine]
+    Refine --> GenRegex
+    Validate -->|Max Retries| End
+```
 
-- **ASCII Art:**
-  - Printed in the terminal
-- **Mermaid Code:**
-  - Printed in the terminal (can be pasted into Mermaid Live Editor)
-- **PNG Image:**
-  - Saved as `workflow.png` in the project directory
+## Quickstart
+1. **Install dependencies** (requires Python 3.8+):
+   ```bash
+   pip install -e .
+   ```
+2. **Set up your `.env` file:**
+   ```env
+   OPENAI_API_KEY=sk-...
+   MODEL_NAME=gpt-3.5-turbo
+   ```
+3. **Run the tool:**
+   ```bash
+   python3 main.py
+   ```
 
-## 📦 Dependencies
+## Output
+- Results: `results/results.json`, `results/results.csv`
+- Workflow diagrams: `images/` (PNG, ASCII, Mermaid)
+
+## Dependencies
 - [LangGraph](https://github.com/langchain-ai/langgraph)
-- [Pydantic](https://docs.pydantic.dev/)
 - [OpenAI Python SDK](https://github.com/openai/openai-python)
+- [Pydantic](https://docs.pydantic.dev/)
 - [python-dotenv](https://pypi.org/project/python-dotenv/)
-- [uv](https://github.com/astral-sh/uv)
 
-## 📝 License
+## License
 MIT
