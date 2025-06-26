@@ -21,12 +21,17 @@ A modular, LLM-powered agent for designing and validating regular expressions wi
 
 ## 🛠️ Setup
 
-1. **Clone the repository**
-2. **Install dependencies**
+This project uses [`uv`](https://github.com/astral-sh/uv) for fast, modern Python dependency management and installation.
+
+1. **Install [uv](https://github.com/astral-sh/uv):**
    ```bash
-   pip install -r requirements.txt
-   # or if using poetry
-   poetry install
+   pip install uv
+   # or
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+2. **Install dependencies:**
+   ```bash
+   uv pip install -r requirements.txt
    ```
 3. **Set up environment variables**
    - Create a `.env` file with your OpenAI API key and (optionally) model name:
@@ -62,6 +67,7 @@ python main.py
 - [Pydantic](https://docs.pydantic.dev/)
 - [OpenAI Python SDK](https://github.com/openai/openai-python)
 - [python-dotenv](https://pypi.org/project/python-dotenv/)
+- [uv](https://github.com/astral-sh/uv)
 
 ## 📝 License
 MIT
