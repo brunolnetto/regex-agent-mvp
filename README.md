@@ -21,11 +21,10 @@ A modular, LLM-powered tool for designing, validating, and refining regular expr
 ## Requirements
 - **Python**: 3.9 or 3.10 (see `pyproject.toml`)
 - **Dependencies:** (automatically installed via pip)
-  - `grandalf`
   - `langgraph>=0.4.10`
-  - `openai>=1.30.1`
   - `pydantic>=2.7.1`
   - `pydantic-ai>=0.3.4`
+  - `grandalf>=0.8`
 - **Note:** All dependencies are managed via `pyproject.toml` (PEP 517/518). No `requirements.txt` is needed.
 
 ---
