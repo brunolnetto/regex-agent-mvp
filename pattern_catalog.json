@@ -1,0 +1,42 @@
+{
+  "email": {
+    "pattern": "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}",
+    "examples_positive": ["john.doe@example.com", "jane_smith123@example.co.uk", "test_email123@test.org"],
+    "examples_negative": ["notanemail", "invalid.email@com", "missing@dotcom"]
+  },
+  "phone": {
+    "pattern": "\\d{3}-\\d{3}-\\d{4}",
+    "examples_positive": ["123-456-7890", "555-555-5555", "999-888-7777"],
+    "examples_negative": ["12-345-6789", "123-45-6789", "123-456-789"]
+  },
+  "date": {
+    "pattern": "\\d{4}-\\d{2}-\\d{2}",
+    "examples_positive": ["2023-01-01", "1999-12-31", "2020-02-29"],
+    "examples_negative": ["01-01-2023", "2023/01/01", "20230101"]
+  },
+  "number": {
+    "pattern": "\\d+",
+    "examples_positive": ["123", "4567", "890"],
+    "examples_negative": ["abc", "12a34", "one23"]
+  },
+  "ipv4": {
+    "pattern": "(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)",
+    "examples_positive": ["192.168.1.1", "8.8.8.8", "127.0.0.1"],
+    "examples_negative": ["999.999.999.999", "abc.def.ghi.jkl", "1234.5.6.7"]
+  },
+  "hex": {
+    "pattern": "0x[0-9a-fA-F]+",
+    "examples_positive": ["0x1A3F", "0xabc123", "0xDEADBEEF"],
+    "examples_negative": ["1234", "xyz", "0x"]
+  },
+  "uuid": {
+    "pattern": "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+    "examples_positive": ["123e4567-e89b-12d3-a456-426614174000"],
+    "examples_negative": ["notauuid", "1234-5678"]
+  },
+  "url": {
+    "pattern": "https?://[\\w.-]+(?:\\.[\\w\\.-]+)+[/#?]?.*",
+    "examples_positive": ["https://example.com", "http://test.org/page"],
+    "examples_negative": ["not a url", "ftp://example.com"]
+  }
+} 
