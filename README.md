@@ -77,11 +77,10 @@ flowchart TD
     Start([Start]) --> GenRegex[Generate Regex]
     GenRegex --> GenExamples[Generate Examples]
     GenExamples --> Validate[Validate Regex]
-    Validate -->|Valid| End([End])
-    Validate -->|Invalid & Retries Left| Feedback[Feedback]
+    Validate -->|Valid or Max Retries| End([End])
+    Validate -->|Invalid and Retries Left| Feedback[Feedback]
     Feedback --> Refine[Refine]
     Refine --> GenRegex
-    Validate -->|Max Retries| End
 ```
 
 ---
