@@ -15,6 +15,7 @@ A modular, LLM-powered tool for designing, validating, and refining regular expr
 - [Output](#output)
 - [Contributing](#contributing)
 - [License](#license)
+- [Workflow Diagrams](#workflow-diagrams)
 
 ---
 
@@ -36,8 +37,38 @@ A modular, LLM-powered tool for designing, validating, and refining regular expr
 - **Advanced Validation:** Reports false positives/negatives and allows user feedback.
 - **Batch Mode:** Run many prompts at once, fully non-interactive, with auto-improvement and summary reporting.
 - **Visualization:** Prints workflow as ASCII art, Mermaid, and PNG diagrams.
-- **Organized Output:** Saves results in the `results/` folder (JSON, CSV, Markdown).
+- **Organized Output:** Saves results in the `results/report-YYYY-MM-DD/` folder (JSON, CSV, Markdown).
 - **Extensible:** Easily add new patterns to the catalog without changing code.
+
+---
+
+## Workflow Diagrams
+
+The agent first runs the **Clarification/Decomposition Workflow** to interpret and, if needed, clarify the user's request. Once the request is understood and decomposed into one or more pattern tasks, each pattern is processed independently through the **Single-Pattern Workflow**. This modular approach ensures that ambiguous or multi-part requests are handled robustly, and each regex is generated, validated, and refined as needed.
+
+### Clarification/Decomposition Workflow
+```mermaid
+flowchart TD
+    Start([Start]) --> Clarify[Clarify & Decompose]
+    Clarify -->|Needs Clarification| UserClarification[User Clarification]
+    Clarify -->|Ready| UserConfirm[User Confirmation]
+    UserClarification --> Clarify
+    UserConfirm -->|Needs Clarification| UserClarification
+    UserConfirm -->|Confirmed| End([End])
+```
+
+### Single-Pattern Workflow
+```mermaid
+flowchart TD
+    Start([Start]) --> GenRegex[Generate Regex]
+    GenRegex --> GenExamples[Generate Examples]
+    GenExamples --> Validate[Validate Regex]
+    Validate -->|Valid| End([End])
+    Validate -->|Invalid & Retries Left| Feedback[Feedback]
+    Feedback --> Refine[Refine]
+    Refine --> GenRegex
+    Validate -->|Max Retries| End
+```
 
 ---
 
@@ -70,7 +101,7 @@ A modular, LLM-powered tool for designing, validating, and refining regular expr
 - **Batch mode:** Use `--prompt-file` with a file containing one prompt per line (e.g., `examples.txt`).
 - **Non-interactive mode:** Use `--non-interactive` to disable all user prompts. The agent will auto-improve and never block for input.
 - **Verbose mode:** Use `--verbose` to see all intermediate output. Omit for a concise summary table only.
-- **Review results** in the console and in the `results/` folder.
+- **Review results** in the console and in the `results/report-YYYY-MM-DD/` folder.
 
 ---
 
@@ -108,7 +139,6 @@ python3 main.py --prompt-file examples.txt --non-interactive
 - In non-verbose mode, a summary table is printed to the console for each prompt.
 
 ---
-
 
 ## Contributing
 - **Pull requests welcome!**
