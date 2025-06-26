@@ -1,32 +1,46 @@
 # Regex Agent MVP
 
-A modular, LLM-powered tool for designing, validating, and refining regular expressions with minimal user input. Features a built-in pattern catalog, advanced validation (false positives/negatives), robust batch mode, and workflow visualization.
+A modular, LLM-powered tool for designing, validating, and refining regular expressions with minimal user input.
+
+<!-- Badges: build, coverage, Python version, etc. -->
 
 ---
 
 ## Table of Contents
-- [Requirements](#requirements)
-- [Features](#features)
 - [Quickstart](#quickstart)
+- [Features](#features)
+- [Workflow Diagrams](#workflow-diagrams)
 - [Usage](#usage)
-- [Batch Mode & CLI Options](#batch-mode--cli-options)
+- [Output](#output)
 - [Pattern Catalog](#pattern-catalog)
 - [Extending the Catalog](#extending-the-catalog)
-- [Output](#output)
+- [Requirements](#requirements)
 - [Contributing](#contributing)
 - [License](#license)
-- [Workflow Diagrams](#workflow-diagrams)
 
 ---
 
-## Requirements
-- **Python**: 3.9 or 3.10 (see `pyproject.toml`)
-- **Dependencies:** (automatically installed via pip)
-  - `langgraph>=0.4.10`
-  - `pydantic>=2.7.1`
-  - `pydantic-ai>=0.3.4`
-  - `grandalf>=0.8`
-- **Note:** All dependencies are managed via `pyproject.toml` (PEP 517/518). No `requirements.txt` is needed.
+## Quickstart
+1. **Install dependencies** (requires Python 3.9+):
+   ```bash
+   pip install -e .
+   ```
+   This uses `pyproject.toml` to resolve and install all dependencies.
+2. **Set up your `.env` file:**
+   ```env
+   OPENAI_API_KEY=sk-...
+   MODEL_NAME=gpt-3.5-turbo
+   ```
+3. **Run the tool (interactive):**
+   ```bash
+   python3 main.py
+   ```
+4. **Run in batch mode (non-interactive, summary only):**
+   ```bash
+   python3 main.py --prompt-file examples.txt --non-interactive --verbose
+   # For quiet summary only (recommended for CI):
+   python3 main.py --prompt-file examples.txt --non-interactive
+   ```
 
 ---
 
@@ -72,30 +86,6 @@ flowchart TD
 
 ---
 
-## Quickstart
-1. **Install dependencies** (requires Python 3.9+):
-   ```bash
-   pip install -e .
-   ```
-   This uses `pyproject.toml` to resolve and install all dependencies.
-2. **Set up your `.env` file:**
-   ```env
-   OPENAI_API_KEY=sk-...
-   MODEL_NAME=gpt-3.5-turbo
-   ```
-3. **Run the tool (interactive):**
-   ```bash
-   python3 main.py
-   ```
-4. **Run in batch mode (non-interactive, summary only):**
-   ```bash
-   python3 main.py --prompt-file examples.txt --non-interactive --verbose
-   # For quiet summary only (recommended for CI):
-   python3 main.py --prompt-file examples.txt --non-interactive
-   ```
-
----
-
 ## Usage
 - **Describe your regex need** in natural language when prompted (interactive mode).
 - **Batch mode:** Use `--prompt-file` with a file containing one prompt per line (e.g., `examples.txt`).
@@ -103,9 +93,7 @@ flowchart TD
 - **Verbose mode:** Use `--verbose` to see all intermediate output. Omit for a concise summary table only.
 - **Review results** in the console and in the `results/report-YYYY-MM-DD/` folder.
 
----
-
-## Batch Mode & CLI Options
+### Batch Mode & CLI Options
 - `--prompt-file <file>`: Run all prompts in the file (one per line).
 - `--non-interactive`: Never prompt for user input. The agent will auto-improve (regenerate examples, clarify description) up to 3 times if needed.
 - `--verbose`: Show all intermediate output (status, tables, agent messages). Omit for only the initial and final summary table.
@@ -115,6 +103,16 @@ flowchart TD
 python3 main.py --prompt-file examples.txt --non-interactive
 ```
 - In non-verbose mode, you get a summary table with: prompt, regex, and status (valid/invalid) for each pattern.
+
+---
+
+## Output
+- All results are saved in a timestamped subdirectory under `results/report-YYYY-MM-DD/`.
+- Output includes:
+  - `results.json`: Full results for all patterns.
+  - `results.csv`: Tabular results for easy review.
+  - `report.md`: Markdown summary report.
+- In non-verbose mode, a summary table is printed to the console for each prompt.
 
 ---
 
@@ -130,13 +128,14 @@ python3 main.py --prompt-file examples.txt --non-interactive
 
 ---
 
-## Output
-- All results are saved in a timestamped subdirectory under `results/`.
-- Output includes:
-  - `results.json`: Full results for all patterns.
-  - `results.csv`: Tabular results for easy review.
-  - `report.md`: Markdown summary report.
-- In non-verbose mode, a summary table is printed to the console for each prompt.
+## Requirements
+- **Python**: 3.9 or 3.10 (see `pyproject.toml`)
+- **Dependencies:** (automatically installed via pip)
+  - `langgraph>=0.4.10`
+  - `pydantic>=2.7.1`
+  - `pydantic-ai>=0.3.4`
+  - `grandalf>=0.8`
+- **Note:** All dependencies are managed via `pyproject.toml` (PEP 517/518). No `requirements.txt` is needed.
 
 ---
 
