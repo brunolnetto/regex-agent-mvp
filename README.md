@@ -12,6 +12,8 @@ A modular, LLM-powered tool for designing, validating, and refining regular expr
 
 ## Workflow Diagrams
 
+The agent first runs the **Clarification/Decomposition Workflow** to interpret and, if needed, clarify the user's request. Once the request is understood and decomposed into one or more pattern tasks, each pattern is processed independently through the **Single-Pattern Workflow**. This modular approach ensures that ambiguous or multi-part requests are handled robustly, and each regex is generated, validated, and refined as needed.
+
 ### Clarification/Decomposition Workflow
 ```mermaid
 flowchart TD
@@ -40,7 +42,7 @@ flowchart TD
 1. **Install dependencies** (requires Python 3.8+):
    ```bash
    pip install -e .
-   ```
+    ```
 2. **Set up your `.env` file:**
    ```env
    OPENAI_API_KEY=sk-...
