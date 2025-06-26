@@ -1,15 +1,13 @@
-from typing import Optional, List, Dict, Union
+from typing import Optional, List, Dict
 from pydantic import BaseModel
 from langgraph.graph import StateGraph, END, START
 import os
 import re
-from openai import OpenAI
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-from rich.progress import Progress
 from rich.syntax import Syntax
 from rich.prompt import Prompt
 import csv
@@ -17,7 +15,6 @@ import json
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from datetime import datetime
-import time
 import argparse
 
 # Load environment variables from .env
@@ -395,7 +392,7 @@ class RegexAgent:
             console.print("[bold yellow][Agent][/bold yellow] Feedback on failed validation:")
         if getattr(state, 'catalog_failed', False):
             if getattr(state, 'verbose', True):
-                console.print(f"[yellow]The standard (catalog) pattern failed. Now using LLM support to refine the pattern.[/yellow]")
+                console.print("[yellow]The standard (catalog) pattern failed. Now using LLM support to refine the pattern.[/yellow]")
             if getattr(state, 'catalog_failure_explanation', None):
                 if getattr(state, 'verbose', True):
                     console.print(f"[yellow]{state.catalog_failure_explanation}[/yellow]")
@@ -438,7 +435,7 @@ class RegexAgent:
             history_context = "\n".join(history_lines)
             if non_interactive:
                 if getattr(state, 'verbose', True):
-                    console.print(f"[yellow]Non-interactive mode: auto-improving by generating new examples and clarification (up to 3 times).[/yellow]")
+                    console.print("[yellow]Non-interactive mode: auto-improving by generating new examples and clarification (up to 3 times).[/yellow]")
                 # Try up to 3 times to improve description and examples
                 for attempt in range(3):
                     # 1. Rephrase/clarify description using LLM
@@ -621,7 +618,7 @@ class RegexAgent:
         lines = []
         description = getattr(self.state, 'description', '') if self.state else ''
         results = getattr(self.state, 'results', []) if self.state and getattr(self.state, 'results', None) is not None else []
-        lines.append(f"# Regex Agent MVP Report\n")
+        lines.append("# Regex Agent MVP Report\n")
         lines.append(f"**Run Timestamp:** {now} UTC  ")
         lines.append(f"**User Prompt:** {description}  ")
         lines.append(f"**Model:** {MODEL_NAME}\n\n---\n")
@@ -652,14 +649,14 @@ class RegexAgent:
             # False negatives/positives
             fn = res.get('false_negatives', []) or []
             fp = res.get('false_positives', []) or []
-            lines.append(f"**False Negatives:**  ")
+            lines.append("**False Negatives:**  ")
             lines.append(f"{', '.join(fn) if fn else '_None_'}\n")
-            lines.append(f"**False Positives:**  ")
+            lines.append("**False Positives:**  ")
             lines.append(f"{', '.join(fp) if fp else '_None_'}\n")
             # Attempt history
             ah = res.get('attempt_history', []) or []
             if ah:
-                lines.append(f"**Attempt History:**\n")
+                lines.append("**Attempt History:**\n")
                 lines.append("| # | Pattern | Explanation | False Negatives | False Positives | Valid? |\n|---|---------|-------------|-----------------|-----------------|--------|")
                 for j, att in enumerate(ah):
                     lines.append(f"| {j+1} | `{att.get('pattern', '')}` | {att.get('explanation', '')} | {', '.join(att.get('false_negatives', []) or [])} | {', '.join(att.get('false_positives', []) or [])} | {'✔' if att.get('validation_passed') else '✘'} |")
