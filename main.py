@@ -1,17 +1,19 @@
 from typing import Optional, List, Dict
-from pydantic import BaseModel
-from langgraph.graph import StateGraph, END, START
 import os
 import re
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import json
+
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.prompt import Prompt
 import csv
-import json
+
+from pydantic import BaseModel
+from langgraph.graph import StateGraph, END, START
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from datetime import datetime
