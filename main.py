@@ -1,3 +1,20 @@
+# =========================
+# Regex Agent MVP - main.py
+# =========================
+#
+# Outline:
+# 1. Imports & Constants
+# 2. Data Models & Schemas
+# 3. Utility Functions
+# 4. Catalog Management
+# 5. Agent Class & Workflow Nodes
+# 6. Output & Reporting
+# 7. CLI / Entry Point
+# =========================
+
+# =========================
+# 1. Imports & Constants
+# =========================
 from typing import Optional, List, Dict
 import os
 import re
@@ -25,6 +42,11 @@ MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-3.5-turbo")
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
 console = Console()
+CATALOG_PATH = "pattern_catalog.json"
+
+# =========================
+# 2. Data Models & Schemas
+# =========================
 
 class RegexExamples(BaseModel):
     positive: List[str]
@@ -132,9 +154,16 @@ class RegexState(BaseModel):
             if self.validation_passed is not None:
                 self.regex_pattern.is_valid = self.validation_passed
 
-CATALOG_PATH = "pattern_catalog.json"
+# =========================
+# 3. Utility Functions
+# =========================
+# (Add any general-purpose helpers here)
 
+# =========================
+# 4. Catalog Management
+# =========================
 def load_pattern_catalog(path=CATALOG_PATH):
+    """Load the pattern catalog from a JSON file."""
     if not os.path.exists(path):
         # If the file does not exist, create an empty catalog
         with open(path, "w") as f:
@@ -144,8 +173,14 @@ def load_pattern_catalog(path=CATALOG_PATH):
         return json.load(f)
 
 def save_pattern_catalog(catalog, path=CATALOG_PATH):
+    """Save the pattern catalog to a JSON file."""
     with open(path, "w") as f:
         json.dump(catalog, f, indent=2)
+
+# =========================
+# 5. Agent Class & Workflow Nodes
+# =========================
+# (RegexAgent and all workflow-related methods EXCEPT output/reporting)
 
 class RegexAgent:
     def __init__(self, non_interactive: bool = False, verbose: bool = True):
