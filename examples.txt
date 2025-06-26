@@ -1,0 +1,18 @@
+Extract emails and phone numbers
+Find all URLs in a text
+Match all IPv4 addresses
+Extract hexadecimal numbers
+Find all UUIDs in a document
+Write a regex to validate a date in YYYY-MM-DD format
+Match numbers with exactly 5 digits
+Find all words that start with a capital letter
+Match strings that contain only lowercase letters
+Extract all hashtags from a tweet
+Match US ZIP codes (5 digits, optionally with a dash and 4 more digits)
+Extract quoted strings (text between double quotes)
+Find all HTML tags in a document
+Match floating point numbers (with optional sign and decimal)
+Extract time in HH:MM 24-hour format
+Find all numbers that are not part of a word
+Match email addresses but not those ending with .gov
+Extract phone numbers that do not start with 555 

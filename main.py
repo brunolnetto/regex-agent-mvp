@@ -18,6 +18,7 @@ from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from datetime import datetime
 import time
+import argparse
 
 # Load environment variables from .env
 load_dotenv()
@@ -96,6 +97,9 @@ class RegexState(BaseModel):
     attempt_history: Optional[List[dict]] = None
     # DRY: store RegexPattern
     regex_pattern: Optional[RegexPattern] = None
+    # Propagate non-interactive mode
+    non_interactive: bool = False
+    verbose: bool = True
 
     def load_from_pattern(self, pattern: RegexPattern):
         self.pattern = pattern.pattern or ""
@@ -145,10 +149,12 @@ def save_pattern_catalog(catalog, path=CATALOG_PATH):
         json.dump(catalog, f, indent=2)
 
 class RegexAgent:
-    def __init__(self):
+    def __init__(self, non_interactive: bool = False, verbose: bool = True):
         self.console = console
         self.state = None
         self.PATTERN_CATALOG = load_pattern_catalog()
+        self.non_interactive = non_interactive
+        self.verbose = verbose
 
     def add_pattern_to_catalog(self, pattern_type, pattern_dict):
         key = str(pattern_type)
@@ -157,7 +163,8 @@ class RegexAgent:
         self.console.print(f"[green]Pattern '{key}' added to catalog and saved to {CATALOG_PATH}.[/green]")
 
     def clarify_and_decompose_agent(self, state: RegexState) -> RegexState:
-        self.console.print("[bold cyan][Agent][/bold cyan] Clarifying and decomposing user request...")
+        if getattr(state, 'verbose', True):
+            self.console.print("[bold cyan][Agent][/bold cyan] Clarifying and decomposing user request...")
         prompt = (
             "You are a regex pattern decomposition assistant.\n"
             "Given a user request, output a JSON object with either a 'pattern_tasks' key (a list of pattern types and descriptions), or a 'clarification' key (a string question if the request is ambiguous).\n"
@@ -208,7 +215,14 @@ class RegexAgent:
         return state
 
     def clarification_interrupt(self, state: RegexState) -> RegexState:
-        self.console.print(Panel(state.clarification_prompt or "Clarification required.", title="[bold yellow]User Clarification Needed"))
+        if self.non_interactive:
+            # In non-interactive mode, skip clarification and use the current description
+            self.console.print("[yellow]Non-interactive mode: skipping clarification and using current description.[/yellow]")
+            state.clarification_needed = False
+            state.clarification_prompt = None
+            return state
+        if getattr(state, 'verbose', True):
+            self.console.print(Panel(state.clarification_prompt or "Clarification required.", title="[bold yellow]User Clarification Needed"))
         user_input = Prompt.ask("Your clarification")
         state.description = user_input
         state.clarification_needed = False
@@ -216,7 +230,8 @@ class RegexAgent:
         return state
 
     def user_confirmation(self, state: RegexState) -> RegexState:
-        self.console.print(Panel("Please confirm the LLM's interpretation of your request.", title="[bold magenta]User Confirmation"))
+        if getattr(state, 'verbose', True):
+            self.console.print(Panel("Please confirm the LLM's interpretation of your request.", title="[bold magenta]User Confirmation"))
         if not state.pattern_tasks:
             self.console.print("[red]No pattern tasks found.[/red]")
             state.clarification_needed = True
@@ -228,7 +243,12 @@ class RegexAgent:
         table.add_column("Description", style="white")
         for i, task in enumerate(state.pattern_tasks):
             table.add_row(str(i+1), task.get('type', 'unknown'), task.get('description', ''))
-        self.console.print(table)
+        if getattr(state, 'verbose', True):
+            self.console.print(table)
+        if self.non_interactive:
+            state.clarification_needed = False
+            state.clarification_prompt = None
+            return state
         answer = Prompt.ask("Is this correct? (Y/n)", default="Y").strip().lower()
         if answer in ("n", "no"):
             state.clarification_needed = True
@@ -240,7 +260,8 @@ class RegexAgent:
 
     @staticmethod
     def generate_regex_agent(state: RegexState) -> RegexState:
-        console.print("[bold cyan][Agent][/bold cyan] Generating regex pattern from description...")
+        if getattr(state, 'verbose', True):
+            console.print("[bold cyan][Agent][/bold cyan] Generating regex pattern from description...")
         prompt = (
             f"Write a Python regex pattern (no slashes or quotes) for: {state.description}\n"
             "Output as JSON: {\"pattern\": \"...\", \"explanation\": \"...\"}"
@@ -257,12 +278,15 @@ class RegexAgent:
         return state
 
     @staticmethod
-    def generate_examples_agent(state: RegexState) -> RegexState:
-        console.print("[bold cyan][Agent][/bold cyan] Generating positive/negative examples...")
+    def generate_examples_agent(state: RegexState, history_context: str = "") -> RegexState:
+        non_interactive = getattr(state, 'non_interactive', False)
+        if getattr(state, 'verbose', True):
+            console.print("[bold cyan][Agent][/bold cyan] Generating positive/negative examples...")
         prompt = (
             f"Given the regex pattern: {state.pattern}\n"
             f"and the description: {state.description}\n"
-            "Generate exactly 3 positive and 3 negative example strings. Output ONLY a JSON object with two fields: 'positive' (list of 3 strings that should match) and 'negative' (list of 3 strings that should not match). Do not include any explanation or extra text. Example: {\"positive\": [\"123\", \"456\", \"789\"], \"negative\": [\"abc\", \"12a34\", \"one23\"]}"
+            + (f"Recent failed attempts (pattern, false negatives, false positives):\n{history_context}\n" if history_context else "")
+            + "Generate exactly 3 positive and 3 negative example strings. Output ONLY a JSON object with two fields: 'positive' (list of 3 strings that should match) and 'negative' (list of 3 strings that should not match). Do not include any explanation or extra text. Example: {\"positive\": [\"123\", \"456\", \"789\"], \"negative\": [\"abc\", \"12a34\", \"one23\"]}"
         )
         agent = Agent(MODEL_NAME, output_type=RegexExamples, output_retries=5)
         try:
@@ -277,21 +301,38 @@ class RegexAgent:
             else:
                 raise ValueError("LLM output did not match expected schema.")
         except UnexpectedModelBehavior as e:
-            console.print(f"[red][LLM OUTPUT ERROR][/red] Could not parse LLM output for examples: {e.message}")
+            if getattr(state, 'verbose', True):
+                console.print(f"[red][LLM OUTPUT ERROR][/red] Could not parse LLM output for examples: {e.message}")
             if getattr(e, 'body', None):
-                console.print(f"[yellow]Raw LLM output:[/yellow] {e.body}")
-            console.print("[bold yellow]LLM failed to generate valid examples. Please provide them manually.[/bold yellow]")
-            pos = Prompt.ask("Enter 3 positive examples (comma-separated)", default="").strip()
-            neg = Prompt.ask("Enter 3 negative examples (comma-separated)", default="").strip()
-            state.examples_positive = [s.strip() for s in pos.split(",") if s.strip()][:3]
-            state.examples_negative = [s.strip() for s in neg.split(",") if s.strip()][:3]
+                if getattr(state, 'verbose', True):
+                    console.print(f"[yellow]Raw LLM output:[/yellow] {e.body}")
+            if non_interactive:
+                if getattr(state, 'verbose', True):
+                    console.print("[yellow]Non-interactive mode: skipping manual example entry.[/yellow]")
+                state.examples_positive = []
+                state.examples_negative = []
+            else:
+                if getattr(state, 'verbose', True):
+                    console.print("[bold yellow]LLM failed to generate valid examples. Please provide them manually.[/bold yellow]")
+                pos = Prompt.ask("Enter 3 positive examples (comma-separated)", default="").strip()
+                neg = Prompt.ask("Enter 3 negative examples (comma-separated)", default="").strip()
+                state.examples_positive = [s.strip() for s in pos.split(",") if s.strip()][:3]
+                state.examples_negative = [s.strip() for s in neg.split(",") if s.strip()][:3]
         except Exception as e:
-            console.print(f"[red][LLM OUTPUT ERROR][/red] Unexpected error: {e}")
-            console.print("[bold yellow]LLM failed to generate valid examples. Please provide them manually.[/bold yellow]")
-            pos = Prompt.ask("Enter 3 positive examples (comma-separated)", default="").strip()
-            neg = Prompt.ask("Enter 3 negative examples (comma-separated)", default="").strip()
-            state.examples_positive = [s.strip() for s in pos.split(",") if s.strip()][:3]
-            state.examples_negative = [s.strip() for s in neg.split(",") if s.strip()][:3]
+            if getattr(state, 'verbose', True):
+                console.print(f"[red][LLM OUTPUT ERROR][/red] Unexpected error: {e}")
+            if non_interactive:
+                if getattr(state, 'verbose', True):
+                    console.print("[yellow]Non-interactive mode: skipping manual example entry.[/yellow]")
+                state.examples_positive = []
+                state.examples_negative = []
+            else:
+                if getattr(state, 'verbose', True):
+                    console.print("[bold yellow]LLM failed to generate valid examples. Please provide them manually.[/bold yellow]")
+                pos = Prompt.ask("Enter 3 positive examples (comma-separated)", default="").strip()
+                neg = Prompt.ask("Enter 3 negative examples (comma-separated)", default="").strip()
+                state.examples_positive = [s.strip() for s in pos.split(",") if s.strip()][:3]
+                state.examples_negative = [s.strip() for s in neg.split(",") if s.strip()][:3]
         # Always update pattern examples after generation
         if state.regex_pattern:
             state.regex_pattern.examples = RegexExamples(
@@ -302,7 +343,8 @@ class RegexAgent:
 
     @staticmethod
     def validate_regex_agent(state: RegexState) -> RegexState:
-        console.print("[bold cyan][Agent][/bold cyan] Validating regex against examples...")
+        if getattr(state, 'verbose', True):
+            console.print("[bold cyan][Agent][/bold cyan] Validating regex against examples...")
         try:
             flags = 0
             if hasattr(state, 'regex_pattern') and state.regex_pattern and getattr(state.regex_pattern, 'flags', None):
@@ -323,7 +365,8 @@ class RegexAgent:
                     expl.append(f"False positives: {false_pos}")
                 state.explanation = "; ".join(expl)
         except Exception as e:
-            console.print(f"[red][Validation ERROR][/red] {e}")
+            if getattr(state, 'verbose', True):
+                console.print(f"[red][Validation ERROR][/red] {e}")
             state.validation_passed = False
             state.false_negatives = state.examples_positive or []
             state.false_positives = []
@@ -346,21 +389,26 @@ class RegexAgent:
 
     @staticmethod
     def feedback_agent(state: RegexState) -> RegexState:
-        console.print("[bold yellow][Agent][/bold yellow] Feedback on failed validation:")
+        # If called as instance method, get non_interactive from self; else, default to False
+        non_interactive = getattr(state, 'non_interactive', False)
+        if getattr(state, 'verbose', True):
+            console.print("[bold yellow][Agent][/bold yellow] Feedback on failed validation:")
         if getattr(state, 'catalog_failed', False):
-            console.print(f"[yellow]The standard (catalog) pattern failed. Now using LLM support to refine the pattern.[/yellow]")
+            if getattr(state, 'verbose', True):
+                console.print(f"[yellow]The standard (catalog) pattern failed. Now using LLM support to refine the pattern.[/yellow]")
             if getattr(state, 'catalog_failure_explanation', None):
-                console.print(f"[yellow]{state.catalog_failure_explanation}[/yellow]")
-        if state.false_negatives:
+                if getattr(state, 'verbose', True):
+                    console.print(f"[yellow]{state.catalog_failure_explanation}[/yellow]")
+        if state.false_negatives and getattr(state, 'verbose', True):
             console.print(f"[red]False negatives (should match but did not):[/red] {state.false_negatives}")
-        if state.false_positives:
+        if state.false_positives and getattr(state, 'verbose', True):
             console.print(f"[red]False positives (should not match but did):[/red] {state.false_positives}")
         # If max retries nearly reached, ask user for more examples or clarification
         if state.retries + 1 >= state.max_retries:
             # Show attempt history (per-pattern)
             if hasattr(state, 'attempt_history') and state.attempt_history:
-                from rich.table import Table
-                console.print("[bold magenta]Attempt History:[/bold magenta]")
+                if getattr(state, 'verbose', True):
+                    console.print("[bold magenta]Attempt History:[/bold magenta]")
                 table = Table(show_lines=True)
                 table.add_column("#", style="cyan", justify="right")
                 table.add_column("Pattern", style="magenta")
@@ -377,8 +425,37 @@ class RegexAgent:
                         ", ".join(att.get('false_positives', []) or []),
                         "✔" if att.get('validation_passed') else "✘"
                     )
-                console.print(table)
-            console.print("[bold yellow]Max retries nearly reached. You can add more examples or clarify the intent.")
+                if getattr(state, 'verbose', True):
+                    console.print(table)
+            # Build history context for LLM (last 3 attempts)
+            history_lines = []
+            for att in (state.attempt_history or [])[-3:]:
+                history_lines.append(
+                    f"Pattern: {att.get('pattern', '')}, "
+                    f"False negatives: {att.get('false_negatives', [])}, "
+                    f"False positives: {att.get('false_positives', [])}"
+                )
+            history_context = "\n".join(history_lines)
+            if non_interactive:
+                if getattr(state, 'verbose', True):
+                    console.print(f"[yellow]Non-interactive mode: auto-improving by generating new examples and clarification (up to 3 times).[/yellow]")
+                # Try up to 3 times to improve description and examples
+                for attempt in range(3):
+                    # 1. Rephrase/clarify description using LLM
+                    improved_description = RegexAgent.clarify_description_llm(state, history_context=history_context)
+                    if improved_description and improved_description != state.description:
+                        if getattr(state, 'verbose', True):
+                            console.print(f"[yellow]Description improved by LLM (attempt {attempt+1}): {improved_description}[/yellow]")
+                        state.description = improved_description
+                    else:
+                        # If no improvement, break early
+                        if attempt > 0:
+                            break
+                    # 2. Regenerate examples with history context
+                    RegexAgent.generate_examples_agent(state, history_context=history_context)
+                return state
+            if getattr(state, 'verbose', True):
+                console.print("[bold yellow]Max retries nearly reached. You can add more examples or clarify the intent.")
             add_more = Prompt.ask("Would you like to add more examples or clarify? (y/N)", default="N").strip().lower()
             if add_more in ("y", "yes"):
                 pos = Prompt.ask("Add positive examples (comma-separated, or leave blank)", default="").strip()
@@ -393,8 +470,29 @@ class RegexAgent:
         return state
 
     @staticmethod
+    def clarify_description_llm(state: RegexState, history_context: str = "") -> str:
+        """Use the LLM to clarify or rephrase the description based on failures and history."""
+        prompt = (
+            f"The following regex pattern failed validation multiple times:\n"
+            f"Pattern: {state.pattern}\n"
+            f"Description: {state.description}\n"
+            + (f"Recent failed attempts (pattern, false negatives, false positives):\n{history_context}\n" if history_context else "")
+            + "Please rephrase or clarify the description to help the LLM generate a better regex. Output ONLY the improved description as a string, no explanation."
+        )
+        agent = Agent(MODEL_NAME, output_type=str)
+        try:
+            result = agent.run_sync(prompt)
+            if isinstance(result.output, str) and result.output.strip():
+                return result.output.strip()
+        except Exception as e:
+            if getattr(state, 'verbose', True):
+                console.print(f"[yellow][LLM clarification error: {e}][/yellow]")
+        return state.description
+
+    @staticmethod
     def refine_agent(state: RegexState) -> RegexState:
-        console.print("[bold cyan][Agent][/bold cyan] Refining regex or examples...")
+        if getattr(state, 'verbose', True):
+            console.print("[bold cyan][Agent][/bold cyan] Refining regex or examples...")
         state.retries += 1
 
         # Build attempt history context for LLM
@@ -516,7 +614,7 @@ class RegexAgent:
 
     def generate_markdown_report(self, filename: str = None):
         now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        if not filename or not isinstance(filename, str):
+        if filename is None or not isinstance(filename, str):
             filename = f"results/run_{now}/report.md"
         # Ensure the parent directory exists
         os.makedirs(os.path.dirname(filename), exist_ok=True)
@@ -577,17 +675,20 @@ class RegexAgent:
 
     def run(self):
         # Display diagrams for the clarification and single-pattern workflows before any user input
-        self.console.print("[bold underline cyan]Clarification/Decomposition Workflow[/bold underline cyan]")
+        if self.verbose:
+            self.console.print("[bold underline cyan]Clarification/Decomposition Workflow[/bold underline cyan]")
         clarification_graph = self.build_clarification_workflow()
         self.display_workflow_diagram(clarification_graph, "clarification", print_ascii=True, save_png=True)
 
-        self.console.print("[bold underline cyan]Single-Pattern Workflow[/bold underline cyan]")
+        if self.verbose:
+            self.console.print("[bold underline cyan]Single-Pattern Workflow[/bold underline cyan]")
         workflow_graph = self.build_single_pattern_workflow()
         self.display_workflow_diagram(workflow_graph, "single_pattern", print_ascii=True, save_png=True)
 
-        self.console.print(Panel("Regex Agent MVP", title="[bold green]Welcome"))
+        if self.verbose:
+            self.console.print(Panel("Regex Agent MVP", title="[bold green]Welcome"))
         description = Prompt.ask("Describe the regex you want to generate")
-        self.state = RegexState(description=description)
+        self.state = RegexState(description=description, non_interactive=self.non_interactive, verbose=self.verbose)
 
         # Use LangGraph workflow for clarification/confirmation
         clarification_workflow = clarification_graph.compile()
@@ -643,7 +744,22 @@ class RegexAgent:
                 ", ".join(res.get('false_negatives', []) or []),
                 ", ".join(res.get('false_positives', []) or []),
             )
-        self.console.print(table)
+        if self.verbose:
+            self.console.print(table)
+        # In non-verbose mode, print a concise summary table with prompt, regex, and status
+        if not self.verbose:
+            summary_table = Table(title="Summary: Prompt, Regex, Status", show_lines=True)
+            summary_table.add_column("Prompt", style="white")
+            summary_table.add_column("Regex", style="magenta")
+            summary_table.add_column("Status", style="bold")
+            prompt_str = getattr(self.state, 'description', '')
+            for res in self.state.results:
+                summary_table.add_row(
+                    prompt_str,
+                    res.get('pattern', ''),
+                    "[green]✔[/green]" if res.get('is_valid') else "[red]✘[/red]"
+                )
+            self.console.print(summary_table)
         # Export results to CSV and JSON
         try:
             with open(json_path, "w") as f:
@@ -663,9 +779,11 @@ class RegexAgent:
                         "; ".join(res.get('false_negatives', []) or []),
                         "; ".join(res.get('false_positives', []) or []),
                     ])
-            self.console.print(f"[green]Results exported to {json_path} and {csv_path}[/green]")
+            if self.verbose:
+                self.console.print(f"[green]Results exported to {json_path} and {csv_path}[/green]")
         except Exception as e:
-            self.console.print(f"[yellow][Could not export results: {e}][/yellow]")
+            if self.verbose:
+                self.console.print(f"[yellow][Could not export results: {e}][/yellow]")
         # Generate Markdown report
         self.generate_markdown_report(md_path)
         self.console.print("[bold green]Done![bold green]")
@@ -677,10 +795,13 @@ class RegexAgent:
         self.console.print(f"[bold]Markdown report:[/bold] {md_path}\n")
 
     def process_pattern(self, task: Dict, idx: int, total: int) -> Dict:
-        self.console.print(Panel(f"Processing pattern {idx+1}/{total}: [bold]{task['description']}[/bold]", title="[blue]Pattern Task"))
+        if self.verbose:
+            self.console.print(Panel(f"Processing pattern {idx+1}/{total}: [bold]{task['description']}[/bold]", title="[blue]Pattern Task"))
         sub_state = RegexState(
             description=task['description'],
-            max_retries=3
+            max_retries=3,
+            non_interactive=self.non_interactive,
+            verbose=self.verbose
         )
         sub_state.attempt_history = []
         ttype = task.get('type', '').lower()
@@ -713,27 +834,179 @@ class RegexAgent:
         sub_state.catalog_failure_explanation = catalog_failure_explanation
         workflow_graph = self.build_single_pattern_workflow()
         workflow = workflow_graph.compile()
-        result = workflow.invoke(sub_state)
-        regex_pattern = getattr(result, 'regex_pattern', None)
-        if regex_pattern is None:
-            regex_pattern = RegexPattern(
-                pattern=result.get("pattern") or "",
-                explanation=result.get("explanation", "") or "",
-                source="llm",
-                is_valid=bool(result.get("validation_passed", False)),
-                created_at=datetime.now(),
-                examples=RegexExamples(
-                    positive=result.get("examples_positive") or [],
-                    negative=result.get("examples_negative") or []
-                ),
-                false_negatives=result.get("false_negatives") or [],
-                false_positives=result.get("false_positives") or [],
-                attempt_history=result.get("attempt_history", []),
+        try:
+            result = workflow.invoke(sub_state)
+            regex_pattern = getattr(result, 'regex_pattern', None)
+            if regex_pattern is None:
+                regex_pattern = RegexPattern(
+                    pattern=result.get("pattern") or "",
+                    explanation=result.get("explanation", "") or "",
+                    source="llm",
+                    is_valid=bool(result.get("validation_passed", False)),
+                    created_at=datetime.now(),
+                    examples=RegexExamples(
+                        positive=result.get("examples_positive") or [],
+                        negative=result.get("examples_negative") or []
+                    ),
+                    false_negatives=result.get("false_negatives") or [],
+                    false_positives=result.get("false_positives") or [],
+                    attempt_history=result.get("attempt_history", []),
+                )
+            return regex_pattern.model_dump()
+        except UnexpectedModelBehavior as e:
+            if self.verbose:
+                self.console.print(f"[red][LLM ERROR][/red] {e}")
+            return {
+                'type': task.get('type', 'unknown'),
+                'description': task.get('description', ''),
+                'pattern': '',
+                'explanation': f'LLM error: {e}',
+                'source': 'llm',
+                'is_valid': False,
+                'false_negatives': [],
+                'false_positives': [],
+                'examples': {},
+                'attempt_history': [],
+                'error': str(e),
+            }
+        except Exception as e:
+            if self.verbose:
+                self.console.print(f"[red][Pattern Processing ERROR][/red] {e}")
+            return {
+                'type': task.get('type', 'unknown'),
+                'description': task.get('description', ''),
+                'pattern': '',
+                'explanation': f'Error: {e}',
+                'source': 'llm',
+                'is_valid': False,
+                'false_negatives': [],
+                'false_positives': [],
+                'examples': {},
+                'attempt_history': [],
+                'error': str(e),
+            }
+
+    def run_with_prompt(self, prompt: str):
+        if not isinstance(prompt, str) or not prompt:
+            self.console.print("[red][Error] No prompt provided to run_with_prompt.[/red]")
+            return
+        self.state = RegexState(description=prompt, non_interactive=self.non_interactive, verbose=self.verbose)
+        clarification_graph = self.build_clarification_workflow()
+        clarification_workflow = clarification_graph.compile()
+        self.state = RegexState(**clarification_workflow.invoke(self.state))
+        if not self.state.pattern_tasks:
+            self.console.print("[red][Error] No pattern tasks found. Exiting.[/red]")
+            return
+        results_with_idx = []
+        with ThreadPoolExecutor() as executor:
+            futures = {
+                executor.submit(self.process_pattern, task, idx, len(self.state.pattern_tasks)): idx
+                for idx, task in enumerate(self.state.pattern_tasks)
+            }
+            for future in as_completed(futures):
+                idx = futures[future]
+                result = future.result()
+                results_with_idx.append((idx, result))
+        results_with_idx.sort(key=lambda x: x[0])
+        self.state.results = [r for idx, r in results_with_idx]
+        now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        run_dir = f"results/run_{now}"
+        os.makedirs(run_dir, exist_ok=True)
+        json_path = os.path.join(run_dir, "results.json")
+        csv_path = os.path.join(run_dir, "results.csv")
+        md_path = os.path.join(run_dir, "report.md")
+        # Output as in run()
+        table = Table(title="All Results", show_lines=True)
+        table.add_column("#", style="cyan", justify="right")
+        table.add_column("Pattern Type", style="green")
+        table.add_column("Description", style="white")
+        table.add_column("Regex", style="magenta")
+        table.add_column("Explanation", style="white")
+        table.add_column("Source", style="yellow")
+        table.add_column("Valid?", style="bold")
+        table.add_column("False Negatives", style="red")
+        table.add_column("False Positives", style="red")
+        for i, res in enumerate(self.state.results):
+            table.add_row(
+                str(i+1),
+                res.get('type', 'unknown'),
+                res.get('description', ''),
+                Syntax(res.get('pattern', '') or '', "python", theme="ansi_dark").highlight(res.get('pattern', '') or ''),
+                res.get('explanation', ''),
+                res.get('source', ''),
+                "[green]✔[/green]" if res.get('is_valid') else "[red]✘[/red]",
+                ", ".join(res.get('false_negatives', []) or []),
+                ", ".join(res.get('false_positives', []) or []),
             )
-        return regex_pattern.model_dump()
+        if self.verbose:
+            self.console.print(table)
+        # In non-verbose mode, print a concise summary table with prompt, regex, and status
+        if not self.verbose:
+            summary_table = Table(title="Summary: Prompt, Regex, Status", show_lines=True)
+            summary_table.add_column("Prompt", style="white")
+            summary_table.add_column("Regex", style="magenta")
+            summary_table.add_column("Status", style="bold")
+            prompt_str = getattr(self.state, 'description', '')
+            for res in self.state.results:
+                summary_table.add_row(
+                    prompt_str,
+                    res.get('pattern', ''),
+                    "[green]✔[/green]" if res.get('is_valid') else "[red]✘[/red]"
+                )
+            self.console.print(summary_table)
+        try:
+            with open(json_path, "w") as f:
+                json.dump(self.state.results, f, indent=2, default=str)
+            with open(csv_path, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["#", "Pattern Type", "Description", "Regex", "Explanation", "Source", "Valid?", "False Negatives", "False Positives"])
+                for i, res in enumerate(self.state.results):
+                    writer.writerow([
+                        i+1,
+                        res.get('type', 'unknown'),
+                        res.get('description', ''),
+                        res.get('pattern', ''),
+                        res.get('explanation', ''),
+                        res.get('source', ''),
+                        "✔" if res.get('is_valid') else "✘",
+                        "; ".join(res.get('false_negatives', []) or []),
+                        "; ".join(res.get('false_positives', []) or []),
+                    ])
+            if self.verbose:
+                self.console.print(f"[green]Results exported to {json_path} and {csv_path}[/green]")
+        except Exception as e:
+            if self.verbose:
+                self.console.print(f"[yellow][Could not export results: {e}][/yellow]")
+        self.generate_markdown_report(md_path)
+        self.console.print("[bold green]Done![bold green]")
+        self.console.print("\n[bold cyan]Run summary:[/bold cyan]")
+        self.console.print(f"[bold]Run directory:[/bold] {run_dir}")
+        self.console.print(f"[bold]Results JSON:[/bold] {json_path}")
+        self.console.print(f"[bold]Results CSV:[/bold] {csv_path}")
+        self.console.print(f"[bold]Markdown report:[/bold] {md_path}\n")
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Regex Agent MVP")
+    parser.add_argument('--prompt', type=str, help='Regex prompt to process')
+    parser.add_argument('--prompt-file', type=str, help='File with one prompt per line')
+    parser.add_argument('--non-interactive', action='store_true', help='Run without user interaction')
+    parser.add_argument('--verbose', action='store_true', help='Show all intermediate output (default: True)')
+    args = parser.parse_args()
+
     if not os.environ.get("OPENAI_API_KEY"):
         console.print("[yellow][Warning] Please set your OPENAI_API_KEY environment variable.[/yellow]")
-    agent = RegexAgent()
-    agent.run()
+
+    prompts = []
+    if args.prompt:
+        prompts = [args.prompt]
+    elif args.prompt_file:
+        with open(args.prompt_file) as f:
+            prompts = [line.strip() for line in f if line.strip()]
+
+    if not prompts:
+        agent = RegexAgent(non_interactive=args.non_interactive, verbose=args.verbose)
+        agent.run()
+    else:
+        for prompt in prompts:
+            agent = RegexAgent(non_interactive=True, verbose=args.verbose)
+            agent.run_with_prompt(prompt)
