@@ -5,6 +5,7 @@ A modular, LLM-powered tool for designing, validating, and refining regular expr
 ---
 
 ## Table of Contents
+- [Requirements](#requirements)
 - [Features](#features)
 - [Quickstart](#quickstart)
 - [Usage](#usage)
@@ -14,6 +15,18 @@ A modular, LLM-powered tool for designing, validating, and refining regular expr
 - [Output](#output)
 - [Contributing](#contributing)
 - [License](#license)
+
+---
+
+## Requirements
+- **Python**: 3.9 or 3.10 (see `pyproject.toml`)
+- **Dependencies:** (automatically installed via pip)
+  - `grandalf`
+  - `langgraph>=0.4.10`
+  - `openai>=1.30.1`
+  - `pydantic>=2.7.1`
+  - `pydantic-ai>=0.3.4`
+- **Note:** All dependencies are managed via `pyproject.toml` (PEP 517/518). No `requirements.txt` is needed.
 
 ---
 
@@ -30,10 +43,11 @@ A modular, LLM-powered tool for designing, validating, and refining regular expr
 ---
 
 ## Quickstart
-1. **Install dependencies** (requires Python 3.8+):
+1. **Install dependencies** (requires Python 3.9+):
    ```bash
    pip install -e .
    ```
+   This uses `pyproject.toml` to resolve and install all dependencies.
 2. **Set up your `.env` file:**
    ```env
    OPENAI_API_KEY=sk-...
