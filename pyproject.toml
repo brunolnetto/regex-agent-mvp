@@ -3,7 +3,7 @@ name = "regex-agent-mvp"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.8,<4.0"
+requires-python = ">=3.9,<4.0"
 dependencies = [
     "grandalf",
     "langgraph>=0.4.10",
